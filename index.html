@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Uno Racing Pit 房排版设计器</title>
+    <script src="https://cdn.staticfile.net/fabric.js/5.3.1/fabric.min.js"></script>
+    <style>
+        body { font-family: system-ui, sans-serif; margin: 0; display: flex; height: 100vh; background-color: #f0f2f5; overflow: hidden; }
+        
+        /* --- 加载页面样式 --- */
+        #loader {
+            position: fixed;
+            inset: 0;
+            background-color: #1e272e;
+            z-index: 9999;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 0.5s ease; 
+        }
+        .loader-logo {
+            width: 500px; 
+            max-width: 80vw; 
+            animation: heartbeat 1.5s ease-in-out infinite both; 
+        }
+        @keyframes heartbeat {
+            from { transform: scale(1); transform-origin: center center; animation-timing-function: ease-out; }
+            10% { transform: scale(0.91); animation-timing-function: ease-in; }
+            17% { transform: scale(0.98); animation-timing-function: ease-out; }
+            33% { transform: scale(0.87); animation-timing-function: ease-in; }
+            45% { transform: scale(1); animation-timing-function: ease-out; }
+        }
+
+        /* --- 右下角备案号样式 --- */
+        .footer-icp {
+            position: fixed;
+            bottom: 15px;
+            right: 25px;
+            font-size: 13px;
+            z-index: 100;
+        }
+        .footer-icp a {
+            color: #95a5a6;
+            text-decoration: none;
+            transition: color 0.3s;
+        }
+        .footer-icp a:hover {
+            color: #3498db; 
+        }
+
+        #sidebar { width: 280px; background: #2c3e50; color: white; padding: 20px; display: flex; flex-direction: column; box-shadow: 2px 0 10px rgba(0,0,0,0.1); z-index: 10; flex-shrink: 0; overflow-y: auto;}
+        #sidebar h2 { margin-top: 0; font-size: 1.1rem; border-bottom: 1px solid #455a64; padding-bottom: 10px;}
+        .note { font-size: 12px; color: #95a5a6; margin-bottom: 15px; line-height: 1.5; }
+        .component-btn { display: block; width: 100%; padding: 10px 10px; margin-bottom: 8px; background: #34495e; color: white; border: 1px solid #465c71; border-radius: 6px; cursor: pointer; text-align: left; transition: all 0.2s; font-size: 13px; }
+        .component-btn:hover { background: #4b6584; transform: translateY(-1px); }
+        .rotate-btn { background: #8e44ad; border-color: #9b59b6; text-align: center; font-weight: bold; margin-bottom: 20px;}
+        .rotate-btn:hover { background: #9b59b6; }
+        .action-btn { background: #27ae60; border-color: #2ecc71; text-align: center; font-weight: bold; margin-top: auto; }
+        .action-btn:hover { background: #2ecc71; }
+        .danger-btn { background: #c0392b; border-color: #e74c3c; text-align: center; margin-top: 10px; }
+        .danger-btn:hover { background: #e74c3c; }
+        #workspace { flex: 1; overflow: auto; padding: 30px; background: #e2e8f0; }
+        .canvas-container { box-shadow: 0 10px 30px rgba(0,0,0,0.15); background: white; margin: 0 auto; }
+    </style>
+</head>
+<body>
+
+    <div id="loader">
+        <img src="logo.png" alt="Uno Racing Logo" class="loader-logo">
+    </div>
+
+    <div class="footer-icp">
+        <a href="https://beian.miit.gov.cn/" target="_blank">沪ICP备XXXXXXXX号-1</a>
+    </div>
+
+    <div id="sidebar">
+        <h2>Pit 房组件库 (1px = 10mm)</h2>
+        <div class="note">
+            • 复制/粘贴：<b>Ctrl+C</b> / <b>Ctrl+V</b><br>
+            • 删除组件：选中按 <b>Delete 键</b><br>
+            • 自由微调：拖动时 <b>按住 Shift 键</b>
+        </div>
+        
+        <button class="component-btn rotate-btn" onclick="rotateSelected()">🔄 旋转选中的组件 (90°)</button>
+
+        <button class="component-btn" onclick="addComponent('standard')">⬜ 标准板-竖 (1000x2100)</button>
+        <button class="component-btn" onclick="addComponent('small')">◽ 小板-竖 (400x2100)</button>
+        <button class="component-btn" onclick="addComponent('LT')">| L型/T型板-竖 (124x2100)</button>
+        
+        <div style="border-top: 1px solid #455a64; margin: 10px 0;"></div>
+        
+        <button class="component-btn" onclick="addComponent('standard_h')">▭ 标准板-横 (2100x1000)</button>
+        <button class="component-btn" onclick="addComponent('small_h')">▬ 小板-横 (2100x400)</button>
+        <button class="component-btn" onclick="addComponent('LT_h')">一 L/T型板-横 (2100x124)</button>
+
+        <div style="border-top: 1px solid #455a64; margin: 10px 0;"></div>
+
+        <button class="component-btn" onclick="addComponent('helmet')">🪖 头盔板 (1000x2100)</button>
+        <button class="component-btn" onclick="addComponent('tv')">📺 电视板 (6000x2100)</button>
+
+        <button class="component-btn action-btn" onclick="exportToImage()">💾 导出设计图 (PNG)</button>
+        <button class="component-btn danger-btn" onclick="clearCanvas()">🗑️ 清空画布</button>
+    </div>
+
+    <div id="workspace">
+        <canvas id="pitCanvas" width="3000" height="1200"></canvas>
+    </div>
+
+    <script>
+        window.onload = function() {
+            if (typeof fabric === 'undefined') {
+                alert('⚠️ 绘图引擎加载失败！请检查网络。');
+                return;
+            }
+            
+            setTimeout(function() {
+                const loader = document.getElementById('loader');
+                loader.style.opacity = '0'; 
+                
+                setTimeout(() => {
+                    loader.style.display = 'none';
+                    initApp();
+                }, 500); 
+            }, 1200); 
+        };
+
+        let canvas;
+        const snapGridSize = 10; 
+        const visualGridSize = 50; 
+        let _clipboard = null; // 全局剪贴板变量
+
+        function initApp() {
+            canvas = new fabric.Canvas('pitCanvas', { preserveObjectStacking: true });
+            drawGrid();
+
+            canvas.on('object:moving', function(options) {
+                const obj = options.target;
+                if (options.e.shiftKey) return; 
+                obj.set({
+                    left: Math.round(obj.left / snapGridSize) * snapGridSize,
+                    top: Math.round(obj.top / snapGridSize) * snapGridSize
+                });
+            });
+        }
+
+        function drawGrid() {
+            if (!canvas) return;
+            for (let i = 0; i < (canvas.width / visualGridSize); i++) {
+                canvas.add(new fabric.Line([i * visualGridSize, 0, i * visualGridSize, canvas.height], { stroke: '#f1f2f6', selectable: false, evented: false }));
+            }
+            for (let i = 0; i < (canvas.height / visualGridSize); i++) {
+                canvas.add(new fabric.Line([0, i * visualGridSize, canvas.width, i * visualGridSize], { stroke: '#f1f2f6', selectable: false, evented: false }));
+            }
+        }
+
+        // --- 复制功能 ---
+        function copyObject() {
+            if (!canvas) return;
+            const activeObj = canvas.getActiveObject();
+            if (activeObj) {
+                activeObj.clone(function(cloned) {
+                    _clipboard = cloned;
+                });
+            }
+        }
+
+        // --- 粘贴功能 ---
+        function pasteObject() {
+            if (!canvas || !_clipboard) return;
+            
+            _clipboard.clone(function(clonedObj) {
+                canvas.discardActiveObject();
+                
+                // 设置粘贴出来的对象偏移，并重新赋予锁定属性
+                clonedObj.set({
+                    left: clonedObj.left + snapGridSize * 2, // 稍微向右下偏移
+                    top: clonedObj.top + snapGridSize * 2,
+                    evented: true,
+                    cornerColor: '#3498db',
+                    transparentCorners: false,
+                    borderColor: '#3498db',
+                    padding: 1,
+                    lockScalingX: true,
+                    lockScalingY: true,
+                    lockRotation: true, 
+                    hasControls: false 
+                });
+
+                // 强制对齐到网格，确保粘贴出来的板子也是规整的
+                clonedObj.set({
+                    left: Math.round(clonedObj.left / snapGridSize) * snapGridSize,
+                    top: Math.round(clonedObj.top / snapGridSize) * snapGridSize
+                });
+
+                if (clonedObj.type === 'activeSelection') {
+                    clonedObj.canvas = canvas;
+                    clonedObj.forEachObject(function(obj) {
+                        canvas.add(obj);
+                    });
+                    clonedObj.setCoords();
+                } else {
+                    canvas.add(clonedObj);
+                }
+                
+                // 每次粘贴后将剪贴板坐标再偏移一点，为了连续多次 Ctrl+V
+                _clipboard.top += snapGridSize * 2;
+                _clipboard.left += snapGridSize * 2;
+                
+                canvas.setActiveObject(clonedObj);
+                canvas.requestRenderAll();
+            });
+        }
+
+        function rotateSelected() {
+            if (!canvas) return;
+            const activeObject = canvas.getActiveObject();
+            if (activeObject) {
+                let newAngle = (activeObject.angle || 0) + 90;
+                activeObject.set('angle', newAngle);
+                activeObject.set({
+                    left: Math.round(activeObject.left / snapGridSize) * snapGridSize,
+                    top: Math.round(activeObject.top / snapGridSize) * snapGridSize
+                });
+                activeObject.setCoords(); 
+                canvas.requestRenderAll();
+            } else {
+                alert("💡 请先在右侧画布中点击选中一个板子，然后再点击旋转！");
+            }
+        }
+
+        function addComponent(type) {
+            if (!canvas) return;
+            let objects = [];
+            const strokeColor = '#7f8c8d';
+            const isHorizontal = type.endsWith('_h');
+            const baseType = type.replace('_h', '');
+
+            if (baseType === 'standard') {
+                let w = isHorizontal ? 210 : 100;
+                let h = isHorizontal ? 100 : 210;
+                objects.push(new fabric.Rect({ left: 0, top: 0, width: w, height: h, fill: '#fff', stroke: strokeColor, strokeWidth: 1 }));
+            } 
+            else if (baseType === 'small') {
+                let w = isHorizontal ? 210 : 40;
+                let h = isHorizontal ? 40 : 210;
+                objects.push(new fabric.Rect({ left: 0, top: 0, width: w, height: h, fill: '#fff', stroke: strokeColor, strokeWidth: 1 }));
+            }
+            else if (baseType === 'LT') {
+                let w = isHorizontal ? 210 : 12.4;
+                let h = isHorizontal ? 12.4 : 210;
+                objects.push(new fabric.Rect({ left: 0, top: 0, width: w, height: h, fill: '#ecf0f1', stroke: strokeColor, strokeWidth: 1 }));
+            }
+            else if (baseType === 'helmet') {
+                objects.push(new fabric.Rect({ left: 0, top: 0, width: 100, height: 210, fill: '#fff', stroke: strokeColor, strokeWidth: 1 }));
+                objects.push(new fabric.Rect({ left: 25, top: 45, width: 50, height: 50, fill: 'transparent', stroke: '#2f3640', strokeWidth: 3 }));
+                objects.push(new fabric.Rect({ left: 32, top: 110, width: 36, height: 36, fill: 'transparent', stroke: '#2f3640', strokeWidth: 3 }));
+            }
+            else if (baseType === 'tv') {
+                for(let i=0; i<6; i++) {
+                    objects.push(new fabric.Rect({ left: i*100, top: 0, width: 100, height: 210, fill: '#fff', stroke: strokeColor, strokeWidth: 1 }));
+                }
+                for(let i=0; i<4; i++) {
+                    let tvWidth = 130;
+                    let tvHeight = 80;
+                    let leftOffset = 18 + i * 144; 
+                    objects.push(new fabric.Rect({ left: leftOffset, top: 20, width: tvWidth, height: tvHeight, fill: '#4b4b4b', stroke: '#222', strokeWidth: 2 }));
+                    
+                    let cx = leftOffset + tvWidth/2;
+                    let cy = 20 + tvHeight;
+                    objects.push(new fabric.Polygon([
+                        {x: cx - 18, y: cy},
+                        {x: cx + 18, y: cy},
+                        {x: cx + 10, y: cy + 10},
+                        {x: cx - 10, y: cy + 10}
+                    ], { fill: '#1a1a1a' }));
+                    objects.push(new fabric.Circle({ left: cx - 1.5, top: cy + 3, radius: 1.5, fill: '#a4b0be' }));
+                }
+            }
+
+            const group = new fabric.Group(objects, {
+                left: 100 + (Math.random() * 50),
+                top: 100 + (Math.random() * 50),
+                cornerColor: '#3498db',
+                transparentCorners: false,
+                borderColor: '#3498db',
+                padding: 1,
+                lockScalingX: true,
+                lockScalingY: true,
+                lockRotation: true, 
+                hasControls: false 
+            });
+
+            canvas.add(group);
+            canvas.setActiveObject(group);
+            
+            const workspace = document.getElementById('workspace');
+            workspace.scrollLeft = 0;
+        }
+
+        // --- 全局按键监听 ---
+        window.addEventListener('keydown', function(e) {
+            if (!canvas) return;
+
+            // Delete 键或 Backspace 键删除
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                const activeObject = canvas.getActiveObject();
+                if (activeObject) {
+                    if (e.key === 'Backspace') e.preventDefault(); // 阻止浏览器网页后退
+                    if (activeObject.type === 'activeSelection') {
+                        activeObject.forEachObject(function(obj) { canvas.remove(obj); });
+                    } else {
+                        canvas.remove(activeObject);
+                    }
+                    canvas.discardActiveObject();
+                    canvas.requestRenderAll();
+                }
+            }
+
+            // Ctrl+C 复制
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+                e.preventDefault();
+                copyObject();
+            }
+
+            // Ctrl+V 粘贴
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+                e.preventDefault();
+                pasteObject();
+            }
+        });
+
+        function exportToImage() {
+            if (!canvas) return;
+            canvas.discardActiveObject(); 
+            canvas.renderAll();
+            
+            let objects = canvas.getObjects();
+            if (objects.length === 0) {
+                alert("画布是空的！");
+                return;
+            }
+            
+            objects = objects.filter(obj => obj.type !== 'line');
+            if (objects.length === 0) return;
+
+            let minX = 9999, minY = 9999, maxX = 0, maxY = 0;
+            objects.forEach(obj => {
+                let bound = obj.getBoundingRect();
+                if(bound.left < minX) minX = bound.left;
+                if(bound.top < minY) minY = bound.top;
+                if(bound.left + bound.width > maxX) maxX = bound.left + bound.width;
+                if(bound.top + bound.height > maxY) maxY = bound.top + bound.height;
+            });
+
+            const padding = 50;
+            minX = Math.max(0, minX - padding);
+            minY = Math.max(0, minY - padding);
+            maxX = Math.min(canvas.width, maxX + padding);
+            maxY = Math.min(canvas.height, maxY + padding);
+
+            const dataURL = canvas.toDataURL({ 
+                format: 'png', 
+                quality: 1, 
+                multiplier: 2,
+                left: minX,
+                top: minY,
+                width: maxX - minX,
+                height: maxY - minY
+            }); 
+            
+            const link = document.createElement('a');
+            link.download = 'uno-racing-pit-layout.png';
+            link.href = dataURL;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function clearCanvas() {
+            if (!canvas) return;
+            if(confirm('确定要清空画板重新设计吗？')) {
+                canvas.clear();
+                canvas.backgroundColor = '#ffffff';
+                drawGrid();
+            }
+        }
+    </script>
+</body>
+</html>
